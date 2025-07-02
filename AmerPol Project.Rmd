@@ -1,0 +1,317 @@
+```{r}
+library(tidyverse)
+library(plotly)
+APol_Data <- read_csv("APol_Data.csv")
+
+APol_Data
+
+APol_Data[9,"persons per square mile"] <- 529
+APol_Data[8,"persons per square mile"] <- 11131
+
+APol_Data1 <- APol_Data %>% rename("State" = 1) %>%
+  mutate(Con_Amend_Vote = as.numeric(ifelse(Con_Amend_Vote == "2/3", 2/3, Con_Amend_Vote)),
+  RecallMetric = recode(Recall, "GOV" = 0.35, "E" = 0.6, "EL" = 0.8, .default = as.numeric(Recall)),
+                                   JudgesMetric = recode(SC_Overview, "Legislative Appointments" = 0, "Gubernatorial Appointments" = 0.1, "Missouri Plan" = 0.4, "Nonpartisan Elections" = 0.9, "Partisan Election" = 1),
+                                   JudgesMetric = ifelse(State == "HI", 0, ifelse(State == "CA" | State == "NM" | State == "MD", 0.2, JudgesMetric)),
+                                   BallotMetric = 0.05 * Ref_Affirm +  0.15 * Ref_Leg_Statute + 0.2 * Ref_Veto + 0.3 * Ref_Statute + 0.3 * Ref_Amend ,
+                                   AmendMetric = ifelse(Con_Election_Vote == 0.5, 0.4, ifelse(Con_Amend_Vote == 0, 0, 1-Con_Amend_Vote)) * (2-Con_2Sess_Required),
+  MetricSum = 0.25*(RecallMetric+ JudgesMetric+ BallotMetric+ AmendMetric),
+  AdmissionDate = as.Date(`Admission Year`, format = "%B %d, %Y"),
+  FedLandPercent = as.numeric(str_sub(`% Federal Land`, end = -2)),
+  Elazar = recode(Elazar, "T" = "Traditional", "I" = "Individual", "M" = "Moral"),
+  Region = recode(Region, "P" = "Pacific", "M" = "Rocky Mountains", "MW" = "Midwest", "SW" = "Southwest", "S" = "South", "NE" = "Northeast"),
+  Prog1912 = as.numeric(Prog1912),
+  Soc1904 = as.numeric(Soc1904),
+  SupportProg = ifelse(
+    is.na(Soc1912), mean(as.numeric(APol_Data$Prog1912) + as.numeric(APol_Data$Soc1912) + as.numeric(APol_Data$Soc1904), na.rm = TRUE), 
+    ifelse(is.na(Soc1904), ifelse(is.na(Prog1912), mean(as.numeric(APol_Data$Prog1912), na.rm = TRUE), Prog1912)  +Soc1912 + mean(as.numeric(APol_Data$Soc1904), na.rm = TRUE), Prog1912 + Soc1912 + Soc1904)
+  )) %>%
+  rename("PSqM" = "persons per square mile", "PSqM_Rank" = "pop dens. rank") %>%
+  select(State, MetricSum, RecallMetric, JudgesMetric, BallotMetric, AmendMetric, Elazar, Region, `PSqM`, `PSqM_Rank`, AdmissionDate, FedLandPercent,SupportProg, Soc1904, Soc1912, Prog1912, everything())
+
+cor(APol_Data1 %>% filter(State != "DC") %>% select(2,13))
+```
+
+
+```{r}
+APol_Data2 <- APol_Data1 %>% select(1:13, 45) %>% filter(State != "DC") %>% mutate(WeightedSum = 0.15 * AmendMetric+0.25*JudgesMetric + 0.25 * RecallMetric + 0.35 * BallotMetric)
+APol_Data2
+cor(APol_Data2 %>% select(13,15))
+
+project_color <- list(
+  list(0.0, "orange"),  # dark blue (at -1)
+  list(0.5, "yellow"),  # purple (at 0)
+  list(1.0, "darkgreen")   # dark red (at +1)
+)
+
+map1<- plot_ly(
+  data = APol_Data1,
+  type = 'choropleth',
+  locations = APol_Data1$State,  # Column with state abbreviations
+  z = APol_Data1$MetricSum,  # Values for coloring
+  text = APol_Data1$State,  # Hover text (show state abbreviations)
+  colorscale = project_color,  # Color scale (you can change this)
+  colorbar = list(title = "Metric Sum"),  # Title for the color bar
+  locationmode = 'USA-states'  # Use the state-level geographical data
+)%>% layout(
+  geo = list(
+    scope = 'usa',  # Limit the map to the USA
+    projection = list(type = 'albers usa'),  # A good projection for zoomed-in maps of the US
+    showlakes = TRUE,  # Optionally show lakes on the map
+    lakecolor = 'rgb(255, 255, 255)'  # Color for lakes (optional)
+  )
+)
+map1
+
+map_func <- function(RM, JM, BM, plot_title = "Weighted Sum") {
+  plot_ly(
+  data = APol_Data1,
+  type = 'choropleth',
+  locations = APol_Data1$State,  # Column with state abbreviations
+  z = (APol_Data1 %>% mutate(MetricSum = RM * RecallMetric + JM * JudgesMetric + BM * BallotMetric + (1-RM - JM- BM) * AmendMetric))$MetricSum,  # Values for coloring
+  text = APol_Data1$State,  # Hover text (show state abbreviations)
+  colorscale = project_color,  # Color scale (you can change this)
+  colorbar = list(title = plot_title),  # Title for the color bar
+  locationmode = 'USA-states'  # Use the state-level geographical data
+)%>% layout(
+  geo = list(
+    scope = 'usa',  # Limit the map to the USA
+    projection = list(type = 'albers usa'),  # A good projection for zoomed-in maps of the US
+    showlakes = TRUE,  # Optionally show lakes on the map
+    lakecolor = 'rgb(255, 255, 255)'  # Color for lakes (optional)
+  )
+)
+}
+
+map_var_func <- function(variable, plot_title = "Weighted Sum") {
+  plot_ly(
+  data = APol_Data1,
+  type = 'choropleth',
+  locations = APol_Data1$State,  # Column with state abbreviations
+  z = APol_Data1[[variable]],  # Values for coloring
+  text = APol_Data1$State,  # Hover text (show state abbreviations)
+  colorscale = project_color,  # Color scale (you can change this)
+  colorbar = list(title = plot_title),  # Title for the color bar
+  locationmode = 'USA-states'  # Use the state-level geographical data
+)%>% layout(
+  geo = list(
+    scope = 'usa',  # Limit the map to the USA
+    projection = list(type = 'albers usa'),  # A good projection for zoomed-in maps of the US
+    showlakes = TRUE,  # Optionally show lakes on the map
+    lakecolor = 'rgb(255, 255, 255)'  # Color for lakes (optional)
+  )
+)
+}
+
+map_var_func("SupportProg", plot_title = "Progressive Support")
+
+#First coordinate is Recall, second is Judges, third is Ballot. The difference of 1 minus the first three is Amendment. 
+map_func(.25, 0.25, 0.25)
+map_func(.25,.25,.35)
+
+APol_Metrics <-APol_Data1 %>% filter(State != "DC") %>% select(3:6)
+APol_Metrics %>% cor() %>% as.data.frame()
+summary(prcomp(APol_Metrics)) #Not very useful
+
+APol_Data2 %>% filter(State != "DC") %>% select(3:6, 9:10, 12)  %>% cor()
+
+APol_Data2%>% filter(State != "DC") %>% select(1, 9:10) %>% arrange(desc(`PSqM Rank`))
+
+cor(APol_Data1 %>% filter(State != "DC") %>% select(2, 45))
+
+APol_Data2 %>%
+  bind_rows(as.data.frame(t(colnames(APol_Data2)))) %>%
+  as.data.frame() %>% view()
+```
+
+
+```{r}
+glm(Elazar == "Moral" ~ RecallMetric + JudgesMetric + BallotMetric + AmendMetric, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit"))
+
+summary(glm(Elazar == "Moral" ~ RecallMetric + JudgesMetric + BallotMetric + AmendMetric, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit")))
+
+anova(glm(Elazar == "Traditional" ~ RecallMetric + JudgesMetric + BallotMetric + AmendMetric, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit")), test = "Chisq")
+
+anova(glm(Elazar == "Individual" ~ MetricSum, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit")), test = "Chisq")
+
+lm(MetricSum ~ Elazar + Region + `PSqM` + `PSqM_Rank` + AdmissionDate + FedLandPercent, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit"))
+
+
+#Full LMs with Metric and Weighted sums
+summary(lm(MetricSum ~ PSqM_Rank +  SupportProg, data = APol_Data2%>% filter(State != "DC")))
+summary(lm(WeightedSum ~ PSqM_Rank  +  SupportProg, data = APol_Data2%>% filter(State != "DC")))
+
+
+
+```
+
+
+```{r}
+plm2 <- function(Metric, IV1, IV2 =1, IV3 = 1, IV4 =1 , IV5 = 1, IV6 = 1) {
+  summary(lm(Metric ~ IV1, IV2 + IV3 + IV4 + IV5 + IV6, data = APol_Data2%>% filter(State != "DC")))
+}
+
+
+ summary(lm(`PSqM` ~ RecallMetric + JudgesMetric + BallotMetric + AmendMetric + 1 + 1 + 1, data = APol_Data2%>% filter(State != "DC"), family = binomial(link = "logit")))
+ 
+ 
+ 
+ summary(lm(MetricSum ~ Elazar, data = APol_Data2%>% filter(State != "DC")))
+  summary(lm(MetricSum ~ Region, data = APol_Data2%>% filter(State != "DC")))$r.squared
+  
+  metrics <- c("MetricSum", "WeightedSum", "RecallMetric", "JudgesMetric", "BallotMetric", "AmendMetric")
+  predictors <- c("Elazar", "Region", "PSqM", "PSqM_Rank"," AdmissionDate", "FedLandPercent", "SupportProg")
+  
+  r2 <- function(metric, predictor) {
+     summary(lm(as.formula(paste(metric, "~", predictor)), data = APol_Data2))$r.squared
+  }
+    r2_df <- matrix(NA, nrow = length(metrics), ncol = length(predictors),
+                dimnames = list(metrics, predictors)) %>%
+         as.data.frame()
+    
+    for (i in 1:length(metrics)) {
+      for (j in 1:length(predictors)) {
+        r2_df[i,j] <- r2(metrics[i], predictors[j]) %>% round(4)
+      }
+    }
+    
+    r2_df
+```
+
+
+```{r}
+aov(BallotMetric ~ AdmissionDate, data = APol_Data2) %>% summary()
+
+p_val <- function(metric, predictor) {
+    summary(aov(as.formula(paste(metric, "~", predictor)), data = APol_Data2))[[1]]$`Pr(>F)`[1]
+  }
+    
+      p_val_df <- matrix(NA, nrow = length(metrics), ncol = length(predictors),
+                dimnames = list(metrics, predictors)) %>%
+         as.data.frame()
+    
+    for (i in 1:length(metrics)) {
+      for (j in 1:length(predictors)) {
+        p_val_df[i,j] <- p_val(metrics[i], predictors[j]) %>% round(6)
+      }
+    }
+  
+      p_val_df %>% round(5)
+      p_val_df * length(metrics) * length(predictors)
+```
+
+
+
+
+
+
+
+
+Sample map; not for the project. 
+
+
+```{r}
+PrezWinner_1900_2024 <- read_csv("PrezWinner_1900-2024.csv", 
+    col_names = FALSE)
+colnames(PrezWinner_1900_2024) <- c("State", "Dem", "GOP", "Other", "2024 EVs")
+PrezWinner_1900_2024 <-  PrezWinner_1900_2024%>% mutate(RacesTotal = Dem + GOP + Other,
+                                Dem_Prop = Dem / RacesTotal,
+                                GOP_Prop = GOP / RacesTotal,
+                                GOP_Margin = GOP_Prop - Dem_Prop,
+                                Races_Won = pmax(Dem, GOP)) %>% 
+                bind_rows(tibble(
+  State = "NullGOP",
+  Dem = 0,
+  GOP = 1,
+  Other = 0,
+  RacesTotal = 1,         # Dem + GOP + Other
+  Dem_Prop = 0,          # Dem / RacesTotal
+  GOP_Prop = 1,          # GOP / RacesTotal
+  GOP_Margin = 1,        # GOP_Prop - Dem_Prop
+  Races_Won = 1          # max(Dem, GOP)
+))
+PrezWinner_1900_2024
+
+state_abbreviations <- c(
+  "Alabama" = "AL", "Alaska" = "AK", "Arizona" = "AZ", "Arkansas" = "AR",
+  "California" = "CA", "Colorado" = "CO", "Connecticut" = "CT", "Delaware" = "DE",
+  "Florida" = "FL", "Georgia" = "GA", "Hawaii" = "HI", "Idaho" = "ID",
+  "Illinois" = "IL", "Indiana" = "IN", "Iowa" = "IA", "Kansas" = "KS",
+  "Kentucky" = "KY", "Louisiana" = "LA", "Maine" = "ME", "Maryland" = "MD",
+  "Massachusetts" = "MA", "Michigan" = "MI", "Minnesota" = "MN", "Mississippi" = "MS",
+  "Missouri" = "MO", "Montana" = "MT", "Nebraska" = "NE", "Nevada" = "NV",
+  "New Hampshire" = "NH", "New Jersey" = "NJ", "New Mexico" = "NM", "New York" = "NY",
+  "North Carolina" = "NC", "North Dakota" = "ND", "Ohio" = "OH", "Oklahoma" = "OK",
+  "Oregon" = "OR", "Pennsylvania" = "PA", "Rhode Island" = "RI", "South Carolina" = "SC",
+  "South Dakota" = "SD", "Tennessee" = "TN", "Texas" = "TX", "Utah" = "UT",
+  "Vermont" = "VT", "Virginia" = "VA", "Washington" = "WA", "West Virginia" = "WV",
+  "Wisconsin" = "WI", "Wyoming" = "WY", "District of Columbia" = "DC")
+  
+  
+  PrezWinner_1900_2024$State <- state_abbreviations[PrezWinner_1900_2024$State]
+  
+  PrezWinner_1900_2024$HoverText <- paste(
+  PrezWinner_1900_2024$Races_Won, " / ", PrezWinner_1900_2024$RacesTotal,
+  "\n ",
+    PrezWinner_1900_2024$State,
+  "- Electoral Votes: ",
+  PrezWinner_1900_2024$`2024 EVs`,
+  sep = ""
+)
+
+  my_colorscale <- list(
+  list(0.0, "#08306B"),  # dark blue (at -1)
+  list(0.25, "#4292C6"), # lighter blue
+  list(0.499, "#ADD8E6"),  # purple (at 0)
+  list(0.5, "#9E9AC8"),  # purple (at 0)
+  list(0.501, "#FFB6C1"),  # purple (at 0)
+  list(0.75, "#FB6A4A"), # lighter red
+  list(1.0, "#99000D")   # dark red (at +1)
+)
+  
+PrezMap <- plot_ly(
+  data = PrezWinner_1900_2024 ,
+  type = 'choropleth',
+  locations = PrezWinner_1900_2024 $State,  # Column with state abbreviations
+  z =PrezWinner_1900_2024$GOP_Margin,  # Values for coloring
+  text = ~HoverText,  # Hover text (show state abbreviations)
+  colorscale =my_colorscale,  # Color scale (you can change this)
+  colorbar = list(title = "Net GOP support"),  # Title for the color bar
+  locationmode = 'USA-states'  # Use the state-level geographical data
+)%>% layout(
+  geo = list(
+    scope = 'usa',  # Limit the map to the USA
+    projection = list(type = 'albers usa'),  # A good projection for zoomed-in maps of the US
+    showlakes = TRUE,  # Optionally show lakes on the map
+    lakecolor = 'rgb(255, 255, 255)'  # Color for lakes (optional)
+  ),
+  title = list(
+    text = "Presidential Votes 1900-2024",
+    x = 0.5,  # Center the title
+    xanchor = 'center',
+    yanchor = 'top',
+    font = list(size = 20, color = 'black')
+  ),
+  annotations = list(
+    list(
+      text = "Dem - GOP - Tie: 279-179-80 EVs",
+      x = 0.5,
+      xanchor = 'center',
+      y = 0.1,
+      yanchor = 'top',
+      showarrow = FALSE,
+      font = list(size = 16, color = 'gray')
+    )
+  )
+)
+PrezMap
+
+
+
+  PrezWinner_1900_2024 %>% summarize(Dem_EVs = sum((GOP_Margin < 0) * `2024 EVs`),
+                                     GOP_EVs = sum((GOP_Margin > 0) * `2024 EVs`),
+                                     Ties = sum((GOP_Margin == 0) * `2024 EVs`))
+
+htmlwidgets::saveWidget(PrezMap, "PrezMap_Interactive.html")
+```
+
