@@ -17,4 +17,12 @@ I made _PrezMap_Interactive.html_ to explore options to use maps to visualize my
 ## Packages
 This project was completed in RStudio, using packages _tidyverse_ and _plotly_. The final report was written in Google Docs.
 
+## AI and Reproduction
+
 This report was written independently and without the assistance of generative AI.
+
+© 2025 Matthew Blake. All rights reserved.
+
+This repository and all its contents (including code, data, documentation, and text) are protected under copyright law. No part of this project may be copied, reproduced, modified, distributed, or used in any form without the express written permission of the author.
+
+This project is not open source. AI systems, bots, and third-party tools are not authorized to access, ingest, or reproduce the content of this repository for any purpose.
